@@ -30,7 +30,7 @@ if (in_array($origin, ALLOWED_ORIGINS, true)) {
 
 header('Vary: Origin');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     http_response_code(204);
@@ -47,7 +47,7 @@ function sendCorsHeaders(): void
 
     Flight::response()->header('Vary', 'Origin');
     Flight::response()->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    Flight::response()->header('Access-Control-Allow-Headers', 'Content-Type');
+    Flight::response()->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 function getJsonBody(): array
@@ -72,6 +72,16 @@ function base64UrlEncode(string $value): string
     return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
 
+function base64UrlDecode(string $value): string|false
+{
+    $padding = strlen($value) % 4;
+    if ($padding > 0) {
+        $value .= str_repeat('=', 4 - $padding);
+    }
+
+    return base64_decode(strtr($value, '-_', '+/'), true);
+}
+
 function issueJwtToken(array $payload): string
 {
     $header = ['alg' => 'HS256', 'typ' => 'JWT'];
@@ -80,6 +90,55 @@ function issueJwtToken(array $payload): string
     $signature = hash_hmac('sha256', $encodedHeader . '.' . $encodedPayload, getJwtSecret(), true);
 
     return $encodedHeader . '.' . $encodedPayload . '.' . base64UrlEncode($signature);
+}
+
+function validateJwtToken(string $token): ?array
+{
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) {
+        return null;
+    }
+
+    [$encodedHeader, $encodedPayload, $encodedSignature] = $parts;
+    $rawHeader = base64UrlDecode($encodedHeader);
+    $rawPayload = base64UrlDecode($encodedPayload);
+    $rawSignature = base64UrlDecode($encodedSignature);
+
+    if ($rawHeader === false || $rawPayload === false || $rawSignature === false) {
+        return null;
+    }
+
+    $header = json_decode($rawHeader, true);
+    $payload = json_decode($rawPayload, true);
+    if (!is_array($header) || !is_array($payload) || ($header['alg'] ?? '') !== 'HS256') {
+        return null;
+    }
+
+    $expectedSignature = hash_hmac('sha256', $encodedHeader . '.' . $encodedPayload, getJwtSecret(), true);
+    if (!hash_equals($expectedSignature, $rawSignature)) {
+        return null;
+    }
+
+    $expiresAt = (int)($payload['exp'] ?? 0);
+    if ($expiresAt <= 0 || $expiresAt < time()) {
+        return null;
+    }
+
+    return $payload;
+}
+
+function getBearerToken(): ?string
+{
+    $authorizationHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    if (!is_string($authorizationHeader) || $authorizationHeader === '') {
+        return null;
+    }
+
+    if (!preg_match('/^Bearer\s+(.+)$/i', $authorizationHeader, $matches)) {
+        return null;
+    }
+
+    return trim($matches[1]);
 }
 
 function resolveRoleForEmail(string $email): string
@@ -157,6 +216,44 @@ function requireAuthenticatedUser(): ?array
     $user = currentUserFromSession();
     if ($user === null) {
         Flight::json(['success' => false, 'error' => 'Unauthorized'], 401);
+        return null;
+    }
+
+    return $user;
+}
+
+function requireDashboardAccessUser(): ?array
+{
+    $user = requireAuthenticatedUser();
+    if ($user === null) {
+        return null;
+    }
+
+    $bearerToken = getBearerToken();
+    if ($bearerToken === null || $bearerToken === '') {
+        Flight::json(['success' => false, 'error' => 'Missing bearer session token'], 401);
+        return null;
+    }
+
+    $jwtPayload = validateJwtToken($bearerToken);
+    if ($jwtPayload === null) {
+        Flight::json(['success' => false, 'error' => 'Invalid or expired bearer session token'], 401);
+        return null;
+    }
+
+    $storedToken = (string)($_SESSION['session_token'] ?? '');
+    if ($storedToken === '' || !hash_equals($storedToken, $bearerToken)) {
+        Flight::json(['success' => false, 'error' => 'Bearer token does not match active session'], 401);
+        return null;
+    }
+
+    if (($jwtPayload['sid'] ?? '') !== session_id()) {
+        Flight::json(['success' => false, 'error' => 'Session binding mismatch'], 401);
+        return null;
+    }
+
+    if (($jwtPayload['email'] ?? '') !== ($user['email'] ?? '')) {
+        Flight::json(['success' => false, 'error' => 'Token subject does not match session user'], 401);
         return null;
     }
 
@@ -348,7 +445,7 @@ Flight::route('GET /api/me', function () {
 Flight::route('GET /api/dashboard', function () {
     sendCorsHeaders();
 
-    $user = requireAuthenticatedUser();
+    $user = requireDashboardAccessUser();
     if ($user === null) {
         return;
     }
@@ -375,7 +472,7 @@ Flight::route('GET /api/dashboard/role/@requiredRole', function (string $require
         return;
     }
 
-    $user = requireAuthenticatedUser();
+    $user = requireDashboardAccessUser();
     if ($user === null) {
         return;
     }

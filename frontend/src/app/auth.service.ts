@@ -118,8 +118,23 @@ export class AuthService {
   async fetchDashboard(): Promise<DashboardData> {
     authDebug('dashboard.fetch.start');
 
+    const token = this.sessionToken();
+    if (!token) {
+      authDebug('dashboard.fetch.failed', { reason: 'missing_session_token' });
+      throw new HttpErrorResponse({
+        status: 401,
+        statusText: 'Missing session token',
+        error: { message: 'Missing bearer session token.' },
+      });
+    }
+
     const response = await firstValueFrom(
-      this.http.get<DashboardResponse>(`${this.apiBaseUrl}/dashboard`, { withCredentials: true })
+      this.http.get<DashboardResponse>(`${this.apiBaseUrl}/dashboard`, {
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
     );
 
     if (!response.success) {

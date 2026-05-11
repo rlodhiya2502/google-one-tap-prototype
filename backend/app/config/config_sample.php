@@ -1,53 +1,40 @@
 <?php
 
-use flight\debug\tracy\TracyExtensionLoader;
-use Tracy\Debugger;
+// ---------------------------------------------------------------------------
+// Google OAuth2
+// ---------------------------------------------------------------------------
+// Your Google OAuth2 client ID from https://console.cloud.google.com/
+define('GOOGLE_CLIENT_ID', 'YOUR_GOOGLE_CLIENT_ID_HERE');
 
-// Set the default timezone
-date_default_timezone_set('America/New_York');
+// ---------------------------------------------------------------------------
+// JWT
+// ---------------------------------------------------------------------------
+// Secret used to sign session JWTs.  Must be a long, random string in production.
+// The APP_JWT_SECRET environment variable takes precedence when set.
+define('JWT_SECRET', 'change-this-to-a-long-random-secret');
+// Token lifetime in seconds (default: 1 hour)
+define('JWT_TTL_SECONDS', 3600);
 
-// Set the error reporting level
-error_reporting(E_ALL);
+// ---------------------------------------------------------------------------
+// CORS — trusted frontend origins
+// ---------------------------------------------------------------------------
+define('ALLOWED_ORIGINS', [
+    'http://localhost:4200',
+]);
 
-// Set the default character encoding
-if(function_exists('mb_internal_encoding') === true) {
-	mb_internal_encoding('UTF-8');
-}
+// ---------------------------------------------------------------------------
+// RBAC — role assignment by e-mail address (lowercase)
+// ---------------------------------------------------------------------------
+// Users whose e-mail appears in ROLE_ADMIN_EMAILS receive the 'admin' role.
+define('ROLE_ADMIN_EMAILS', [
+    'admin@example.com',
+]);
 
-// Set the default locale
-if(function_exists('setlocale') === true) {
-	setlocale(LC_ALL, 'en_US.UTF-8');
-}
-
-// Get the $app var to use below
-if(empty($app)) {
-	$app = Flight::app();
-}
-
-// if you want to load classes that have underscores in them, comment out the following line
-// Loader::setV2ClassLoading(false);
-
-// This autoloads your code in the app directory so you don't have to require_once everything
-$app->path(__DIR__ . $ds . '..' . $ds . '..');
-
-// This is where you can set some flight config variables. 
-$app->set('flight.base_url', '/'); // if this is in a subdirectory, you'll need to change this
-$app->set('flight.case_sensitive', false); // if you want case sensitive routes, set this to true
-$app->set('flight.log_errors', true); // if you want to log errors, set this to true
-$app->set('flight.handle_errors', false); // if you want flight to handle errors, set this to true, otherwise Tracy will handle them
-$app->set('flight.views.path', __DIR__ . $ds . '..' . $ds . 'views'); // set the path to your view/template/ui files
-$app->set('flight.views.extension', '.php'); // set the file extension for your view/template/ui files
-$app->set('flight.content_length', true); // if flight should send a content length header
-
-/* 
- * Get Tracy up and running
- * 
- * There lots of setup options for Tracy! Logs, emails, clicking to
- * open in your editor and a lot more!
- * Check out the docs here:
- * https://tracy.nette.org/
- */
-Debugger::enable(); // auto tries to figure out your environment
+// Users whose e-mail appears in ROLE_INSTRUCTOR_EMAILS receive the 'instructor' role.
+// All other authenticated users receive the 'learner' role.
+define('ROLE_INSTRUCTOR_EMAILS', [
+    'instructor@example.com',
+]);
 // Debugger::enable(Debugger::DEVELOPMENT) // sometimes you have to be explicit (also Debugger::PRODUCTION)
 // Debugger::enable('23.75.345.200'); // you can also provide an array of IP addresses
 Debugger::$logDirectory = __DIR__ . $ds . 'log';

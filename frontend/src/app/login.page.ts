@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from './auth.service';
 import { authDebug } from './auth-debug';
+import { environment } from '../environments/environment';
 
 interface TokenClientResponse {
   access_token?: string;
@@ -139,7 +140,7 @@ declare global {
   ],
 })
 export class LoginPage {
-  private readonly clientId = 'REDACTED_GOOGLE_CLIENT_ID';
+  private readonly clientId = environment.googleClientId;
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);

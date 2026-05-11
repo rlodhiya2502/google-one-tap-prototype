@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/../app/config/config.php';
 
 ini_set('session.use_strict_mode', '1');
 ini_set('session.cookie_httponly', '1');
@@ -14,13 +15,7 @@ session_set_cookie_params([
 ]);
 session_start();
 
-const GOOGLE_CLIENT_ID = 'REDACTED_GOOGLE_CLIENT_ID';
-const JWT_TTL_SECONDS = 3600;
-const ALLOWED_ORIGINS = [
-    'http://localhost:4200',
-    'http://127.0.0.1:4200',
-    'http://[::1]:4200',
-];
+
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($origin, ALLOWED_ORIGINS, true)) {
@@ -64,7 +59,7 @@ function getJsonBody(): array
 function getJwtSecret(): string
 {
     $secret = getenv('APP_JWT_SECRET');
-    return is_string($secret) && $secret !== '' ? $secret : 'REDACTED_JWT_SECRET';
+    return is_string($secret) && $secret !== '' ? $secret : JWT_SECRET;
 }
 
 function base64UrlEncode(string $value): string
@@ -144,11 +139,11 @@ function getBearerToken(): ?string
 function resolveRoleForEmail(string $email): string
 {
     $normalizedEmail = strtolower(trim($email));
-    if ($normalizedEmail === 'rlodhiya@dinm.co.uk') {
+    if (in_array($normalizedEmail, array_map('strtolower', ROLE_ADMIN_EMAILS), true)) {
         return 'admin';
     }
 
-    if ($normalizedEmail === 'rlodhiya@adeptdrive.com') {
+    if (in_array($normalizedEmail, array_map('strtolower', ROLE_INSTRUCTOR_EMAILS), true)) {
         return 'instructor';
     }
 

@@ -17,15 +17,32 @@ interface AuthSuccessResponse {
   user: AuthUser;
 }
 
+interface PromptMomentNotification {
+  isDisplayMoment: () => boolean;
+  isDisplayed: () => boolean;
+  isNotDisplayed: () => boolean;
+  getNotDisplayedReason: () => string;
+  isSkippedMoment: () => boolean;
+  getSkippedReason: () => string;
+  isDismissedMoment: () => boolean;
+  getDismissedReason: () => string;
+  getMomentType: () => string;
+}
+
 interface GoogleAccountsApi {
   id: {
     initialize: (options: {
       client_id: string;
       callback: (response: GoogleCredentialResponse) => void;
-      use_fedcm_for_prompt?: boolean;
       itp_support?: boolean;
     }) => void;
-    prompt: () => void;
+    prompt: (callback?: (notification: PromptMomentNotification) => void) => void;
+    renderButton: (element: HTMLElement, options: {
+      theme?: string;
+      size?: string;
+      text?: string;
+      width?: number;
+    }) => void;
     disableAutoSelect: () => void;
   };
 }
@@ -61,8 +78,12 @@ declare global {
           <button type="button" (click)="signOut()">Sign out</button>
         } @else {
           <p>The One Tap prompt will appear automatically.</p>
-          <button type="button" (click)="showPrompt()">Show prompt again</button>
-          <p class="hint">If blocked by the browser, allow third-party sign-in prompts for this site.</p>
+          @if (showSignInButton()) {
+            <div id="google-signin-btn" class="signin-btn-wrap"></div>
+          } @else {
+            <button type="button" (click)="showPrompt()">Show prompt again</button>
+          }
+          <p class="hint">If the prompt is blocked, use the Sign in with Google button above.</p>
         }
       </section>
     </main>
@@ -129,6 +150,10 @@ declare global {
         color: #475569;
       }
 
+      .signin-btn-wrap {
+        margin-top: 1rem;
+      }
+
       .origin-debug {
         font-size: 0.8rem;
         color: #64748b;
@@ -156,6 +181,7 @@ export class App implements OnInit {
 
   user = signal<AuthUser | null>(null);
   statusMessage = signal<string>('');
+  showSignInButton = signal(false);
   currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
   async ngOnInit(): Promise<void> {
@@ -177,21 +203,44 @@ export class App implements OnInit {
 
     this.user.set(null);
     this.statusMessage.set('Signed out.');
+    this.showSignInButton.set(false);
 
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
-      window.google.accounts.id.prompt();
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          this.showSignInButton.set(true);
+          setTimeout(() => this.renderSignInButton(), 0);
+        }
+      });
     }
   }
 
   showPrompt(): void {
-    if (window.google?.accounts?.id) {
-      this.statusMessage.set('');
-      window.google.accounts.id.prompt();
+    if (!window.google?.accounts?.id) {
+      this.statusMessage.set('Google script is still loading. Please try again in a moment.');
       return;
     }
 
-    this.statusMessage.set('Google script is still loading. Please try again in a moment.');
+    this.statusMessage.set('');
+    window.google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        this.showSignInButton.set(true);
+        setTimeout(() => this.renderSignInButton(), 0);
+      }
+    });
+  }
+
+  private renderSignInButton(): void {
+    const el = document.getElementById('google-signin-btn');
+    if (el && window.google?.accounts?.id) {
+      window.google.accounts.id.renderButton(el, {
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        width: 300,
+      });
+    }
   }
 
   private async waitForGoogleScript(): Promise<void> {

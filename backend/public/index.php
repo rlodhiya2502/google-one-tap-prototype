@@ -1,9 +1,21 @@
 <?php
 require __DIR__ . '/../vendor/autoload.php';
 
+ini_set('session.use_strict_mode', '1');
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_samesite', 'Lax');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'domain' => '',
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
 
 const GOOGLE_CLIENT_ID = 'REDACTED_GOOGLE_CLIENT_ID';
+const JWT_TTL_SECONDS = 3600;
 const ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'http://127.0.0.1:4200',
@@ -49,14 +61,149 @@ function getJsonBody(): array
     return is_array($decoded) ? $decoded : [];
 }
 
+function getJwtSecret(): string
+{
+    $secret = getenv('APP_JWT_SECRET');
+    return is_string($secret) && $secret !== '' ? $secret : 'REDACTED_JWT_SECRET';
+}
+
+function base64UrlEncode(string $value): string
+{
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function issueJwtToken(array $payload): string
+{
+    $header = ['alg' => 'HS256', 'typ' => 'JWT'];
+    $encodedHeader = base64UrlEncode(json_encode($header, JSON_UNESCAPED_SLASHES));
+    $encodedPayload = base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES));
+    $signature = hash_hmac('sha256', $encodedHeader . '.' . $encodedPayload, getJwtSecret(), true);
+
+    return $encodedHeader . '.' . $encodedPayload . '.' . base64UrlEncode($signature);
+}
+
+function resolveRoleForEmail(string $email): string
+{
+    $normalizedEmail = strtolower(trim($email));
+    if ($normalizedEmail === 'rlodhiya@dinm.co.uk') {
+        return 'admin';
+    }
+
+    if ($normalizedEmail === 'rlodhiya@adeptdrive.com') {
+        return 'instructor';
+    }
+
+    return 'learner';
+}
+
+function buildUserPayload(string $name, string $email): array
+{
+    return [
+        'name' => $name !== '' ? $name : $email,
+        'email' => strtolower(trim($email)),
+        'role' => resolveRoleForEmail($email),
+    ];
+}
+
+function startAuthenticatedSession(array $user): array
+{
+    session_regenerate_id(true);
+
+    $issuedAt = time();
+    $expiresAt = $issuedAt + JWT_TTL_SECONDS;
+    $jwt = issueJwtToken([
+        'sub' => $user['email'],
+        'name' => $user['name'],
+        'email' => $user['email'],
+        'role' => $user['role'],
+        'iat' => $issuedAt,
+        'exp' => $expiresAt,
+        'sid' => session_id(),
+    ]);
+
+    $_SESSION['user'] = $user;
+    $_SESSION['session_token'] = $jwt;
+    $_SESSION['session_expires_at'] = $expiresAt;
+
+    return [
+        'user' => $user,
+        'sessionToken' => $jwt,
+        'expiresAt' => $expiresAt,
+    ];
+}
+
 function currentUserFromSession(): ?array
 {
     if (!isset($_SESSION['user']) || !is_array($_SESSION['user'])) {
         return null;
     }
 
+    $expiresAt = (int)($_SESSION['session_expires_at'] ?? 0);
+    if ($expiresAt <= 0 || $expiresAt < time()) {
+        $_SESSION = [];
+        session_destroy();
+        return null;
+    }
+
     return [
         'name' => $_SESSION['user']['name'] ?? '',
+        'email' => $_SESSION['user']['email'] ?? '',
+        'role' => $_SESSION['user']['role'] ?? 'learner',
+    ];
+}
+
+function requireAuthenticatedUser(): ?array
+{
+    $user = currentUserFromSession();
+    if ($user === null) {
+        Flight::json(['success' => false, 'error' => 'Unauthorized'], 401);
+        return null;
+    }
+
+    return $user;
+}
+
+function rolePriority(string $role): int
+{
+    if ($role === 'admin') {
+        return 3;
+    }
+
+    if ($role === 'instructor') {
+        return 2;
+    }
+
+    if ($role === 'learner') {
+        return 1;
+    }
+
+    return 0;
+}
+
+function userHasRequiredRole(string $userRole, string $requiredRole): bool
+{
+    return rolePriority($userRole) >= rolePriority($requiredRole);
+}
+
+function buildDashboardDataForRole(string $role): array
+{
+    if ($role === 'admin') {
+        return [
+            'widgets' => ['platformHealth', 'userManagement', 'courseAudit'],
+            'permissions' => ['manage_users', 'manage_courses', 'view_reports'],
+        ];
+    }
+
+    if ($role === 'instructor') {
+        return [
+            'widgets' => ['courseOverview', 'studentProgress', 'assignmentQueue'],
+            'permissions' => ['manage_own_courses', 'grade_assignments', 'view_class_reports'],
+        ];
+    }
+
+    return [
+        'widgets' => ['enrolledCourses', 'upcomingDeadlines', 'recentFeedback'],
+        'permissions' => ['view_enrolled_courses', 'submit_assignments'],
     ];
 }
 
@@ -95,13 +242,21 @@ Flight::route('POST /api/auth/google-one-tap', function () {
         return;
     }
 
-    $_SESSION['user'] = [
-        'name' => $userData['name'] ?? '',
-    ];
+    $email = (string)($userData['email'] ?? '');
+    if ($email === '') {
+        Flight::json(['success' => false, 'error' => 'Google token did not include email'], 401);
+        return;
+    }
+
+    $session = startAuthenticatedSession(
+        buildUserPayload((string)($userData['name'] ?? ''), $email)
+    );
 
     Flight::json([
         'success' => true,
-        'user' => currentUserFromSession(),
+        'user' => $session['user'],
+        'sessionToken' => $session['sessionToken'],
+        'expiresAt' => $session['expiresAt'],
     ]);
 });
 
@@ -155,13 +310,21 @@ Flight::route('POST /api/auth/google-access-token', function () {
         return;
     }
 
-    $_SESSION['user'] = [
-        'name' => $userInfo['name'] ?? ($userInfo['email'] ?? 'Google User'),
-    ];
+    $email = (string)($userInfo['email'] ?? '');
+    if ($email === '') {
+        Flight::json(['success' => false, 'error' => 'Google profile did not include email'], 401);
+        return;
+    }
+
+    $session = startAuthenticatedSession(
+        buildUserPayload((string)($userInfo['name'] ?? ''), $email)
+    );
 
     Flight::json([
         'success' => true,
-        'user' => currentUserFromSession(),
+        'user' => $session['user'],
+        'sessionToken' => $session['sessionToken'],
+        'expiresAt' => $session['expiresAt'],
     ]);
 });
 
@@ -177,6 +340,62 @@ Flight::route('GET /api/me', function () {
     Flight::json([
         'success' => true,
         'user' => $user,
+        'sessionToken' => $_SESSION['session_token'] ?? null,
+        'expiresAt' => (int)($_SESSION['session_expires_at'] ?? 0),
+    ]);
+});
+
+Flight::route('GET /api/dashboard', function () {
+    sendCorsHeaders();
+
+    $user = requireAuthenticatedUser();
+    if ($user === null) {
+        return;
+    }
+
+    $allowedRoles = ['admin', 'instructor', 'learner'];
+    if (!in_array($user['role'], $allowedRoles, true)) {
+        Flight::json(['success' => false, 'error' => 'Forbidden'], 403);
+        return;
+    }
+
+    Flight::json([
+        'success' => true,
+        'user' => $user,
+        'dashboard' => buildDashboardDataForRole($user['role']),
+    ]);
+});
+
+Flight::route('GET /api/dashboard/role/@requiredRole', function (string $requiredRole) {
+    sendCorsHeaders();
+
+    $requiredRole = strtolower(trim($requiredRole));
+    if (!in_array($requiredRole, ['admin', 'instructor', 'learner'], true)) {
+        Flight::json(['success' => false, 'error' => 'Unknown role scope'], 400);
+        return;
+    }
+
+    $user = requireAuthenticatedUser();
+    if ($user === null) {
+        return;
+    }
+
+    if (!userHasRequiredRole($user['role'], $requiredRole)) {
+        Flight::json([
+            'success' => false,
+            'error' => 'Forbidden',
+            'requiredRole' => $requiredRole,
+            'userRole' => $user['role'],
+        ], 403);
+        return;
+    }
+
+    Flight::json([
+        'success' => true,
+        'message' => 'Access granted for role-scoped dashboard.',
+        'requiredRole' => $requiredRole,
+        'user' => $user,
+        'dashboard' => buildDashboardDataForRole($requiredRole),
     ]);
 });
 

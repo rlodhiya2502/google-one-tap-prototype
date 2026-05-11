@@ -1,15 +1,23 @@
 <?php
-require 'flight/Flight.php';
+require __DIR__ . '/../vendor/autoload.php';
 
 session_start();
 
 const GOOGLE_CLIENT_ID = 'REDACTED_GOOGLE_CLIENT_ID';
-const FRONTEND_ORIGIN = 'http://localhost:4200';
+const ALLOWED_ORIGINS = [
+    'http://localhost:4200',
+    'http://127.0.0.1:4200',
+];
 
 function sendCorsHeaders(): void
 {
-    Flight::response()->header('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-    Flight::response()->header('Access-Control-Allow-Credentials', 'true');
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if (in_array($origin, ALLOWED_ORIGINS, true)) {
+        Flight::response()->header('Access-Control-Allow-Origin', $origin);
+        Flight::response()->header('Access-Control-Allow-Credentials', 'true');
+    }
+
+    Flight::response()->header('Vary', 'Origin');
     Flight::response()->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     Flight::response()->header('Access-Control-Allow-Headers', 'Content-Type');
 }

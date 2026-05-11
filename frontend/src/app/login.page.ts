@@ -13,11 +13,16 @@ interface TokenClient {
   requestAccessToken: (options?: { prompt?: string }) => void;
 }
 
+interface TokenClientErrorResponse {
+  type: string;
+}
+
 interface GoogleOauth2Api {
   initTokenClient: (options: {
     client_id: string;
     scope: string;
     callback: (response: TokenClientResponse) => void;
+    error_callback?: (error: TokenClientErrorResponse) => void;
   }) => TokenClient;
 }
 
@@ -139,6 +144,7 @@ export class LoginPage {
   private readonly platformId = inject(PLATFORM_ID);
 
   private tokenClient: TokenClient | null = null;
+  private popupInProgress = false;
 
   readonly statusMessage = signal('');
   readonly isBusy = signal(false);
@@ -153,11 +159,12 @@ export class LoginPage {
     void this.bootstrap();
   }
 
-  async startGoogleSignIn(): Promise<void> {
-    if (!this.tokenClient || this.isBusy()) {
+  startGoogleSignIn(): void {
+    if (!this.tokenClient || this.isBusy() || this.popupInProgress) {
       return;
     }
 
+    this.popupInProgress = true;
     this.isBusy.set(true);
     this.statusMessage.set('');
     this.tokenClient.requestAccessToken({ prompt: 'select_account' });
@@ -174,6 +181,7 @@ export class LoginPage {
       client_id: this.clientId,
       scope: 'openid profile email',
       callback: (response: TokenClientResponse) => void this.handleTokenResponse(response),
+      error_callback: (error: TokenClientErrorResponse) => this.handleTokenError(error),
     }) || null;
 
     if (!this.tokenClient) {
@@ -187,6 +195,7 @@ export class LoginPage {
   private async handleTokenResponse(response: TokenClientResponse): Promise<void> {
     if (response.error || !response.access_token) {
       this.statusMessage.set('Google sign-in was cancelled or blocked.');
+      this.popupInProgress = false;
       this.isBusy.set(false);
       return;
     }
@@ -202,8 +211,20 @@ export class LoginPage {
         this.statusMessage.set('Sign-in failed. Please try again.');
       }
     } finally {
+      this.popupInProgress = false;
       this.isBusy.set(false);
     }
+  }
+
+  private handleTokenError(error: TokenClientErrorResponse): void {
+    if (error.type === 'popup_failed_to_open' || error.type === 'popup_closed') {
+      this.statusMessage.set('Popup was blocked or closed. Please click Continue with Google again.');
+    } else {
+      this.statusMessage.set('Google sign-in could not be started.');
+    }
+
+    this.popupInProgress = false;
+    this.isBusy.set(false);
   }
 
   private async waitForGoogleScript(): Promise<boolean> {

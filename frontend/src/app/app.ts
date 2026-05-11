@@ -1,7 +1,7 @@
 import { Component, OnInit, PLATFORM_ID, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpClient, HttpClientModule } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { HttpClient, HttpClientModule, HttpErrorResponse } from '@angular/common/http';
+import { catchError, firstValueFrom, of } from 'rxjs';
 import { isPlatformBrowser } from '@angular/common';
 
 interface GoogleCredentialResponse {
@@ -20,9 +20,18 @@ interface AuthSuccessResponse {
 interface GoogleAccountsApi {
   id: {
     initialize: (options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
-    prompt: () => void;
+    prompt: (momentListener?: (notification: GooglePromptMomentNotification) => void) => void;
     disableAutoSelect: () => void;
   };
+}
+
+interface GooglePromptMomentNotification {
+  isDisplayMoment: () => boolean;
+  isDisplayed: () => boolean;
+  isNotDisplayed: () => boolean;
+  getNotDisplayedReason: () => string;
+  isSkippedMoment: () => boolean;
+  getSkippedReason: () => string;
 }
 
 declare global {
@@ -162,7 +171,23 @@ export class App implements OnInit {
 
   showPrompt(): void {
     if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt();
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isDisplayMoment() && notification.isDisplayed()) {
+          this.statusMessage.set('');
+          return;
+        }
+
+        if (notification.isNotDisplayed()) {
+          const reason = notification.getNotDisplayedReason();
+          this.statusMessage.set(`Google One Tap was not displayed (${reason}). Add this exact origin to Google OAuth Authorized JavaScript origins.`);
+          return;
+        }
+
+        if (notification.isSkippedMoment()) {
+          const reason = notification.getSkippedReason();
+          this.statusMessage.set(`Google One Tap was skipped (${reason}). You can retry from the button below.`);
+        }
+      });
       return;
     }
 
@@ -170,17 +195,27 @@ export class App implements OnInit {
   }
 
   private async tryLoadExistingSession(): Promise<void> {
-    try {
-      const response = await firstValueFrom(
-        this.http.get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true })
-      );
+    const response = await firstValueFrom(
+      this.http
+        .get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true })
+        .pipe(
+          catchError((error: HttpErrorResponse) => {
+            if (error.status === 401) {
+              return of(null);
+            }
 
-      if (response.success) {
-        this.user.set(response.user);
-      }
-    } catch {
-      this.user.set(null);
+            this.statusMessage.set('Unable to reach backend session endpoint. Check backend server is running at http://localhost:8000.');
+            return of(null);
+          })
+        )
+    );
+
+    if (response?.success) {
+      this.user.set(response.user);
+      return;
     }
+
+    this.user.set(null);
   }
 
   private async initializeGoogleOneTap(): Promise<void> {

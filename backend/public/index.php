@@ -9,6 +9,21 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:4200',
 ];
 
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, ALLOWED_ORIGINS, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Access-Control-Allow-Credentials: true');
+}
+
+header('Vary: Origin');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
 function sendCorsHeaders(): void
 {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';

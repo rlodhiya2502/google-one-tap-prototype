@@ -186,7 +186,7 @@ export class App implements OnInit {
 
   showPrompt(): void {
     if (window.google?.accounts?.id) {
-      this.statusMessage.set(`If One Tap does not appear, add this exact origin in Google OAuth Authorized JavaScript origins: ${window.location.origin}`);
+      this.statusMessage.set('');
       window.google.accounts.id.prompt();
       return;
     }
@@ -215,7 +215,6 @@ export class App implements OnInit {
 
     window.google.accounts.id.initialize({
       client_id: this.clientId,
-      use_fedcm_for_prompt: true,
       itp_support: true,
       callback: (response: GoogleCredentialResponse) => this.handleCredentialResponse(response),
     });

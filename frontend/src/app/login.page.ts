@@ -1,0 +1,220 @@
+import { Component, PLATFORM_ID, inject, signal } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
+import { AuthService } from './auth.service';
+
+interface TokenClientResponse {
+  access_token?: string;
+  error?: string;
+}
+
+interface TokenClient {
+  requestAccessToken: (options?: { prompt?: string }) => void;
+}
+
+interface GoogleOauth2Api {
+  initTokenClient: (options: {
+    client_id: string;
+    scope: string;
+    callback: (response: TokenClientResponse) => void;
+  }) => TokenClient;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        oauth2?: GoogleOauth2Api;
+      };
+    };
+  }
+}
+
+@Component({
+  standalone: true,
+  selector: 'app-login-page',
+  imports: [CommonModule],
+  template: `
+    <main class="container">
+      <section class="card">
+        <h1>Sign in with Google</h1>
+        <p>Use the button below to sign in without leaving this app.</p>
+
+        <div class="origin-debug">
+          <small>Current Origin: <code>{{ currentOrigin }}</code></small>
+        </div>
+
+        @if (statusMessage()) {
+          <p class="message">{{ statusMessage() }}</p>
+        }
+
+        <button type="button" (click)="startGoogleSignIn()" [disabled]="isBusy() || !isReady()">
+          Continue with Google
+        </button>
+      </section>
+    </main>
+  `,
+  styles: [
+    `
+      .container {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f7f7f7 0%, #ebf4ff 100%);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .card {
+        width: min(100%, 460px);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      h1 {
+        margin: 0 0 1rem;
+        font-size: 1.4rem;
+      }
+
+      p {
+        margin: 0.5rem 0;
+        color: #334155;
+      }
+
+      button {
+        margin-top: 0.8rem;
+        border: 0;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #fff;
+        padding: 0.7rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        background: #94a3b8;
+        cursor: not-allowed;
+      }
+
+      button:hover:not(:disabled) {
+        background: #1e293b;
+      }
+
+      .origin-debug {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0.5rem 0;
+        padding: 0.4rem;
+        background: #f1f5f9;
+        border-radius: 6px;
+      }
+
+      .message {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        color: #9a3412;
+        border-radius: 10px;
+        padding: 0.6rem;
+      }
+
+      code {
+        background: #e2e8f0;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: "Courier New", monospace;
+        word-break: break-all;
+      }
+    `,
+  ],
+})
+export class LoginPage {
+  private readonly clientId = 'REDACTED_GOOGLE_CLIENT_ID';
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  private tokenClient: TokenClient | null = null;
+
+  readonly statusMessage = signal('');
+  readonly isBusy = signal(false);
+  readonly isReady = signal(false);
+  readonly currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  constructor() {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    void this.bootstrap();
+  }
+
+  async startGoogleSignIn(): Promise<void> {
+    if (!this.tokenClient || this.isBusy()) {
+      return;
+    }
+
+    this.isBusy.set(true);
+    this.statusMessage.set('');
+    this.tokenClient.requestAccessToken({ prompt: 'select_account' });
+  }
+
+  private async bootstrap(): Promise<void> {
+    const ready = await this.waitForGoogleScript();
+    if (!ready) {
+      this.statusMessage.set('Google Sign-In script is not available right now.');
+      return;
+    }
+
+    this.tokenClient = window.google?.accounts?.oauth2?.initTokenClient({
+      client_id: this.clientId,
+      scope: 'openid profile email',
+      callback: (response: TokenClientResponse) => void this.handleTokenResponse(response),
+    }) || null;
+
+    if (!this.tokenClient) {
+      this.statusMessage.set('Unable to initialize Google Sign-In.');
+      return;
+    }
+
+    this.isReady.set(true);
+  }
+
+  private async handleTokenResponse(response: TokenClientResponse): Promise<void> {
+    if (response.error || !response.access_token) {
+      this.statusMessage.set('Google sign-in was cancelled or blocked.');
+      this.isBusy.set(false);
+      return;
+    }
+
+    try {
+      await this.authService.signInWithGoogleAccessToken(response.access_token);
+      this.statusMessage.set('');
+      await this.router.navigateByUrl('/authorized');
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        this.statusMessage.set('Google token was rejected by backend verification.');
+      } else {
+        this.statusMessage.set('Sign-in failed. Please try again.');
+      }
+    } finally {
+      this.isBusy.set(false);
+    }
+  }
+
+  private async waitForGoogleScript(): Promise<boolean> {
+    const maxAttempts = 50;
+    let attempts = 0;
+
+    while (!window.google?.accounts?.oauth2 && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+
+    return !!window.google?.accounts?.oauth2;
+  }
+}

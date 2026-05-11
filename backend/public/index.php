@@ -105,6 +105,66 @@ Flight::route('POST /api/auth/google-one-tap', function () {
     ]);
 });
 
+Flight::route('POST /api/auth/google-access-token', function () {
+    sendCorsHeaders();
+
+    $payload = getJsonBody();
+    $accessToken = $payload['accessToken'] ?? '';
+
+    if (!$accessToken) {
+        Flight::json(['success' => false, 'error' => 'No access token provided'], 400);
+        return;
+    }
+
+    $tokenInfoUrl = 'https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' . urlencode($accessToken);
+    $tokenInfoResponse = @file_get_contents($tokenInfoUrl);
+
+    if ($tokenInfoResponse === false) {
+        Flight::json(['success' => false, 'error' => 'Failed to verify access token'], 401);
+        return;
+    }
+
+    $tokenInfo = json_decode($tokenInfoResponse, true);
+    if (!is_array($tokenInfo) || isset($tokenInfo['error_description']) || isset($tokenInfo['error'])) {
+        Flight::json(['success' => false, 'error' => 'Invalid access token'], 401);
+        return;
+    }
+
+    if (($tokenInfo['aud'] ?? '') !== GOOGLE_CLIENT_ID) {
+        Flight::json(['success' => false, 'error' => 'Token audience mismatch'], 401);
+        return;
+    }
+
+    $userInfoRequestOptions = [
+        'http' => [
+            'method' => 'GET',
+            'header' => "Authorization: Bearer {$accessToken}\r\n",
+        ],
+    ];
+    $userInfoContext = stream_context_create($userInfoRequestOptions);
+    $userInfoResponse = @file_get_contents('https://openidconnect.googleapis.com/v1/userinfo', false, $userInfoContext);
+
+    if ($userInfoResponse === false) {
+        Flight::json(['success' => false, 'error' => 'Failed to fetch Google user profile'], 401);
+        return;
+    }
+
+    $userInfo = json_decode($userInfoResponse, true);
+    if (!is_array($userInfo) || isset($userInfo['error'])) {
+        Flight::json(['success' => false, 'error' => 'Invalid Google user profile response'], 401);
+        return;
+    }
+
+    $_SESSION['user'] = [
+        'name' => $userInfo['name'] ?? ($userInfo['email'] ?? 'Google User'),
+    ];
+
+    Flight::json([
+        'success' => true,
+        'user' => currentUserFromSession(),
+    ]);
+});
+
 Flight::route('GET /api/me', function () {
     sendCorsHeaders();
 

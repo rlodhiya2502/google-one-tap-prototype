@@ -48,7 +48,7 @@ declare var google: any;
 })
 export class App implements OnInit {
   // Replace this with your actual Google Client ID
-  private clientId = 'REDACTED_GOOGLE_CLIENT_ID ';
+  private clientId = 'REDACTED_GOOGLE_CLIENT_ID';
   
   // URL to your FlightPHP backend (update this based on your cPanel setup)
   private backendUrl = 'http://localhost:8000/api/auth';
@@ -61,9 +61,14 @@ export class App implements OnInit {
   // Signal to track if the placeholder client ID is still being used
   clientIdError = signal<boolean>(false);
 
+  // Use a sanitized ID to avoid silent failures caused by whitespace.
+  private get sanitizedClientId(): string {
+    return this.clientId.trim();
+  }
+
   ngOnInit() {
     // Check if the placeholder is still present before initialising the script
-    if (this.clientId.includes('YOUR_GOOGLE_CLIENT_ID')) {
+    if (!this.sanitizedClientId || this.sanitizedClientId.includes('YOUR_GOOGLE_CLIENT_ID')) {
       this.clientIdError.set(true);
       return;
     }
@@ -78,7 +83,7 @@ export class App implements OnInit {
     script.defer = true;
     script.onload = () => {
       google.accounts.id.initialize({
-        client_id: this.clientId,
+        client_id: this.sanitizedClientId,
         callback: this.handleCredentialResponse.bind(this),
         // Enable the Federated Credential Management API (FedCM)
         use_fedcm_for_prompt: true 

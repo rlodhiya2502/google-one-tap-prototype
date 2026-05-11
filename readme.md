@@ -8,7 +8,10 @@ This project now includes:
 
 ## Google Client ID (Web)
 
-REDACTED_GOOGLE_CLIENT_ID
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+2. Create an OAuth 2.0 Client ID for Web application.
+3. Add `http://localhost:4200` to the list of authorized JavaScript origins.
+4. Note the Client ID for use in the frontend.
 
 ## Local Run
 

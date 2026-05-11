@@ -177,7 +177,7 @@ export class App implements OnInit {
     }
 
     this.configureGoogle();
-    this.renderSignInButton();
+    setTimeout(() => this.renderSignInButton(), 0);
   }
 
   async signOut(): Promise<void> {

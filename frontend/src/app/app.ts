@@ -34,7 +34,6 @@ interface GoogleAccountsApi {
     initialize: (options: {
       client_id: string;
       callback: (response: GoogleCredentialResponse) => void;
-      itp_support?: boolean;
     }) => void;
     prompt: (callback?: (notification: PromptMomentNotification) => void) => void;
     renderButton: (element: HTMLElement, options: {
@@ -264,7 +263,6 @@ export class App implements OnInit {
 
     window.google.accounts.id.initialize({
       client_id: this.clientId,
-      itp_support: true,
       callback: (response: GoogleCredentialResponse) => this.handleCredentialResponse(response),
     });
   }

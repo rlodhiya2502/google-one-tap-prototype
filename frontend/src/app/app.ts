@@ -48,7 +48,7 @@ declare global {
   template: `
     <main class="container">
       <section class="card">
-        <h1>Sign in with Google One Tap</h1>
+        <h1>Sign in with Google</h1>
 
         <div class="origin-debug">
           <small>Current Origin: <code>{{ currentOrigin }}</code></small>

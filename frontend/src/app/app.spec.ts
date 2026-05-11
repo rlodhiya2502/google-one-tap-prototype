@@ -19,6 +19,6 @@ describe('App', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Sign in with Google One Tap');
+    expect(compiled.querySelector('h1')?.textContent).toContain('Sign in with Google');
   });
 });

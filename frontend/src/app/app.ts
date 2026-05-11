@@ -163,13 +163,9 @@ export class App implements OnInit {
       return;
     }
 
-    await this.tryLoadExistingSession();
-
-    if (!this.user()) {
-      await this.waitForGoogleScript();
-      this.configureGoogle();
-      this.showPrompt();
-    }
+    await this.waitForGoogleScript();
+    this.configureGoogle();
+    this.showPrompt();
   }
 
   async signOut(): Promise<void> {
@@ -196,30 +192,6 @@ export class App implements OnInit {
     }
 
     this.statusMessage.set('Google script is still loading. Please try again in a moment.');
-  }
-
-  private async tryLoadExistingSession(): Promise<void> {
-    const response = await firstValueFrom(
-      this.http
-        .get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true })
-        .pipe(
-          catchError((error: HttpErrorResponse) => {
-            if (error.status === 401) {
-              return of(null);
-            }
-
-            this.statusMessage.set('Unable to reach backend session endpoint. Check backend server is running at http://localhost:8000.');
-            return of(null);
-          })
-        )
-    );
-
-    if (response?.success) {
-      this.user.set(response.user);
-      return;
-    }
-
-    this.user.set(null);
   }
 
   private async waitForGoogleScript(): Promise<void> {

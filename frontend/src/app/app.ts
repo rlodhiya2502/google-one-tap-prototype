@@ -166,6 +166,7 @@ export class App implements OnInit {
     await this.tryLoadExistingSession();
 
     if (!this.user()) {
+      await this.waitForGoogleScript();
       this.configureGoogle();
       this.showPrompt();
     }
@@ -221,9 +222,22 @@ export class App implements OnInit {
     this.user.set(null);
   }
 
-  private configureGoogle(): void {
+  private async waitForGoogleScript(): Promise<void> {
+    const maxAttempts = 50;
+    let attempts = 0;
+
+    while (!window.google?.accounts?.id && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+
     if (!window.google?.accounts?.id) {
       this.statusMessage.set('Google One Tap is not available right now.');
+    }
+  }
+
+  private configureGoogle(): void {
+    if (!window.google?.accounts?.id) {
       return;
     }
 

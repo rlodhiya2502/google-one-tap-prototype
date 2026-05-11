@@ -55,7 +55,7 @@ declare global {
           <p class="message">{{ statusMessage() }}</p>
         }
 
-        <button type="button" (click)="startGoogleSignIn()" [disabled]="isBusy() || !isReady()">
+        <button type="button" (click)="startGoogleSignIn($event)" [disabled]="isBusy() || !isReady()">
           Continue with Google
         </button>
       </section>
@@ -161,7 +161,21 @@ export class LoginPage {
     void this.bootstrap();
   }
 
-  startGoogleSignIn(): void {
+  startGoogleSignIn(event: MouseEvent): void {
+    if (!event.isTrusted) {
+      authDebug('login.click.untrusted');
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && 'userActivation' in navigator) {
+      const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+      if (activation && !activation.isActive) {
+        authDebug('login.click.noUserActivation');
+        this.statusMessage.set('User activation is required. Please click Continue with Google again.');
+        return;
+      }
+    }
+
     if (!this.tokenClient || this.isBusy() || this.popupInProgress) {
       authDebug('login.click.ignored', {
         hasTokenClient: !!this.tokenClient,

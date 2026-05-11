@@ -198,14 +198,21 @@ export class App implements OnInit {
 
   private renderSignInButton(): void {
     const el = document.getElementById(this.signInButtonId);
-    if (el && window.google?.accounts?.id) {
-      window.google.accounts.id.renderButton(el, {
-        theme: 'outline',
-        size: 'large',
-        text: 'signin_with',
-        width: 300,
-      });
+    if (!el || !window.google?.accounts?.id) {
+      return;
     }
+
+    // Prevent duplicate GIS iframe renders that can trigger aborted button requests.
+    if (el.childElementCount > 0) {
+      return;
+    }
+
+    window.google.accounts.id.renderButton(el, {
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+      width: 300,
+    });
   }
 
   private async waitForGoogleScript(): Promise<boolean> {
@@ -218,7 +225,7 @@ export class App implements OnInit {
     }
 
     if (!window.google?.accounts?.id) {
-      this.statusMessage.set('Google One Tap is not available right now.');
+      this.statusMessage.set('Google Sign-In is not available right now.');
       return false;
     }
 

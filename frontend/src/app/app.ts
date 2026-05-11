@@ -47,6 +47,10 @@ declare global {
       <section class="card">
         <h1>Sign in with Google One Tap</h1>
 
+        <div class="origin-debug">
+          <small>Current Origin: <code>{{ currentOrigin }}</code></small>
+        </div>
+
         @if (statusMessage()) {
           <p class="message">{{ statusMessage() }}</p>
         }
@@ -124,6 +128,23 @@ declare global {
         font-size: 0.9rem;
         color: #475569;
       }
+
+      .origin-debug {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+        padding: 0.4rem;
+        background: #f1f5f9;
+        border-radius: 6px;
+      }
+
+      code {
+        background: #e2e8f0;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: "Courier New", monospace;
+        word-break: break-all;
+      }
     `,
   ],
 })
@@ -135,6 +156,7 @@ export class App implements OnInit {
 
   user = signal<AuthUser | null>(null);
   statusMessage = signal<string>('');
+  currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
   async ngOnInit(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -144,7 +166,7 @@ export class App implements OnInit {
     await this.tryLoadExistingSession();
 
     if (!this.user()) {
-      await this.initializeGoogleOneTap();
+      this.configureGoogle();
       this.showPrompt();
     }
   }
@@ -197,25 +219,6 @@ export class App implements OnInit {
     }
 
     this.user.set(null);
-  }
-
-  private async initializeGoogleOneTap(): Promise<void> {
-    if (window.google?.accounts?.id) {
-      this.configureGoogle();
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Google Identity Services script.'));
-      document.head.appendChild(script);
-    });
-
-    this.configureGoogle();
   }
 
   private configureGoogle(): void {

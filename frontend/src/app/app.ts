@@ -19,19 +19,15 @@ interface AuthSuccessResponse {
 
 interface GoogleAccountsApi {
   id: {
-    initialize: (options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
-    prompt: (momentListener?: (notification: GooglePromptMomentNotification) => void) => void;
+    initialize: (options: {
+      client_id: string;
+      callback: (response: GoogleCredentialResponse) => void;
+      use_fedcm_for_prompt?: boolean;
+      itp_support?: boolean;
+    }) => void;
+    prompt: () => void;
     disableAutoSelect: () => void;
   };
-}
-
-interface GooglePromptMomentNotification {
-  isDisplayMoment: () => boolean;
-  isDisplayed: () => boolean;
-  isNotDisplayed: () => boolean;
-  getNotDisplayedReason: () => string;
-  isSkippedMoment: () => boolean;
-  getSkippedReason: () => string;
 }
 
 declare global {
@@ -171,24 +167,8 @@ export class App implements OnInit {
 
   showPrompt(): void {
     if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isDisplayMoment() && notification.isDisplayed()) {
-          this.statusMessage.set('');
-          return;
-        }
-
-        if (notification.isNotDisplayed()) {
-          const reason = notification.getNotDisplayedReason();
-          const currentOrigin = window.location.origin;
-          this.statusMessage.set(`Google One Tap was not displayed (${reason}). Add this exact origin to Google OAuth Authorized JavaScript origins: ${currentOrigin}`);
-          return;
-        }
-
-        if (notification.isSkippedMoment()) {
-          const reason = notification.getSkippedReason();
-          this.statusMessage.set(`Google One Tap was skipped (${reason}). You can retry from the button below.`);
-        }
-      });
+      this.statusMessage.set(`If One Tap does not appear, add this exact origin in Google OAuth Authorized JavaScript origins: ${window.location.origin}`);
+      window.google.accounts.id.prompt();
       return;
     }
 
@@ -246,6 +226,8 @@ export class App implements OnInit {
 
     window.google.accounts.id.initialize({
       client_id: this.clientId,
+      use_fedcm_for_prompt: true,
+      itp_support: true,
       callback: (response: GoogleCredentialResponse) => this.handleCredentialResponse(response),
     });
   }

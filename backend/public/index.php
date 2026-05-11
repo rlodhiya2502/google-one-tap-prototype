@@ -1,66 +1,112 @@
 <?php
-// Ensure you have downloaded the flight directory to your cPanel hosting
 require 'flight/Flight.php';
 
-// Handle CORS for local testing (Angular and PHP often run on different ports locally).
-// You can restrict the Access-Control-Allow-Origin header in production.
-Flight::route('OPTIONS /*', function() {
-    Flight::response()->header('Access-Control-Allow-Origin', '*');
-    Flight::response()->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    Flight::response()->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-    Flight::stop(200);
+session_start();
+
+const GOOGLE_CLIENT_ID = 'REDACTED_GOOGLE_CLIENT_ID';
+const FRONTEND_ORIGIN = 'http://localhost:4200';
+
+function sendCorsHeaders(): void
+{
+    Flight::response()->header('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
+    Flight::response()->header('Access-Control-Allow-Credentials', 'true');
+    Flight::response()->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    Flight::response()->header('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function getJsonBody(): array
+{
+    $body = Flight::request()->getBody();
+    if (!$body) {
+        return [];
+    }
+
+    $decoded = json_decode($body, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function currentUserFromSession(): ?array
+{
+    if (!isset($_SESSION['user']) || !is_array($_SESSION['user'])) {
+        return null;
+    }
+
+    return [
+        'name' => $_SESSION['user']['name'] ?? '',
+    ];
+}
+
+Flight::route('OPTIONS /*', function () {
+    sendCorsHeaders();
+    Flight::stop(204);
 });
 
-// The authentication endpoint
-Flight::route('POST /api/auth', function(){
-    Flight::response()->header('Access-Control-Allow-Origin', '*');
+Flight::route('POST /api/auth/google-one-tap', function () {
+    sendCorsHeaders();
 
-    // Retrieve the JSON payload sent by Angular
-    $data = Flight::request()->data;
-    $token = $data->token;
+    $payload = getJsonBody();
+    $token = $payload['token'] ?? '';
 
     if (!$token) {
-        Flight::json(['error' => 'No token provided'], 400);
+        Flight::json(['success' => false, 'error' => 'No token provided'], 400);
         return;
     }
 
-    // Verify the token. 
-    // Using Google's tokeninfo endpoint is a practical, dependency-free approach for shared cPanel hosting.
-    $url = "https://oauth2.googleapis.com/tokeninfo?id_token=" . $token;
-    
-    // Suppress warnings with @ in case the token is completely invalid and Google returns a 400 error
+    $url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' . urlencode($token);
     $response = @file_get_contents($url);
 
     if ($response === false) {
-         Flight::json(['error' => 'Failed to verify token with Google'], 401);
-         return;
+        Flight::json(['success' => false, 'error' => 'Failed to verify token with Google'], 401);
+        return;
     }
 
     $userData = json_decode($response, true);
-
-    // Check for errors returned by Google
-    if (isset($userData['error'])) {
-         Flight::json(['error' => 'Invalid token'], 401);
-         return;
+    if (!is_array($userData) || isset($userData['error'])) {
+        Flight::json(['success' => false, 'error' => 'Invalid token'], 401);
+        return;
     }
 
-    // Security Note: In a production environment, you MUST verify that 
-    // $userData['aud'] exactly matches your Google Client ID here.
-    // if ($userData['aud'] !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') { ... }
+    if (($userData['aud'] ?? '') !== GOOGLE_CLIENT_ID) {
+        Flight::json(['success' => false, 'error' => 'Token audience mismatch'], 401);
+        return;
+    }
 
-    // At this point, the user is verified. You would typically create a PHP session
-    // or issue your own application-specific JWT here.
+    $_SESSION['user'] = [
+        'name' => $userData['name'] ?? '',
+    ];
 
     Flight::json([
         'success' => true,
-        'message' => 'User authenticated successfully',
-        'user' => [
-            'name' => $userData['name'] ?? '',
-            'email' => $userData['email'] ?? '',
-            'picture' => $userData['picture'] ?? ''
-        ]
+        'user' => currentUserFromSession(),
     ]);
 });
 
+Flight::route('GET /api/me', function () {
+    sendCorsHeaders();
+
+    $user = currentUserFromSession();
+    if ($user === null) {
+        Flight::json(['success' => false, 'error' => 'Unauthorized'], 401);
+        return;
+    }
+
+    Flight::json([
+        'success' => true,
+        'user' => $user,
+    ]);
+});
+
+Flight::route('POST /api/logout', function () {
+    sendCorsHeaders();
+
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+    }
+    session_destroy();
+
+    Flight::json(['success' => true]);
+});
+
 Flight::start();
-?>

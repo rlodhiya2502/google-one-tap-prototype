@@ -1,121 +1,235 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { isPlatformBrowser } from '@angular/common';
 
-// Declare the Google namespace to prevent TypeScript errors
-declare var google: any;
+interface GoogleCredentialResponse {
+  credential: string;
+}
+
+interface AuthUser {
+  name: string;
+}
+
+interface AuthSuccessResponse {
+  success: boolean;
+  user: AuthUser;
+}
+
+interface GoogleAccountsApi {
+  id: {
+    initialize: (options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
+    prompt: () => void;
+    disableAutoSelect: () => void;
+  };
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: GoogleAccountsApi;
+    };
+  }
+}
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [CommonModule, HttpClientModule],
   template: `
-    <div class="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 font-sans">
-      <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-        
-        <h1 class="text-2xl font-bold text-gray-800 mb-6">Google One Tap Prototype</h1>
+    <main class="container">
+      <section class="card">
+        <h1>Sign in with Google One Tap</h1>
 
-        @if (clientIdError()) {
-          <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 text-left">
-            <p class="text-sm text-yellow-700">
-              <strong>Action Required:</strong> To resolve the console errors and test the sign-in prompt, you must replace the placeholder <code>YOUR_GOOGLE_CLIENT_ID</code> in the <code>app.ts</code> file with your actual Google OAuth 2.0 Client ID.
-            </p>
-          </div>
-        } @else if (!user()) {
-          <p class="text-gray-600 mb-4">Please sign in to continue.</p>
-          <p class="text-sm text-gray-500 mb-8">The Google One Tap prompt should appear shortly. If you closed it, reload the page.</p>
-          
-          <!-- Fallback button container in case One Tap fails or is closed -->
-          <div id="g_id_onload" class="flex justify-center"></div>
-        } @else {
-          <div class="flex flex-col items-center">
-            <img [src]="user()?.picture" alt="Profile Picture" class="w-20 h-20 rounded-full mb-4 border-2 border-gray-200">
-            <h2 class="text-xl font-semibold text-gray-800">{{ user()?.name }}</h2>
-            <p class="text-gray-600 mb-6">{{ user()?.email }}</p>
-            
-            <button 
-              (click)="signOut()" 
-              class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
-            >
-              Sign Out
-            </button>
-          </div>
+        @if (statusMessage()) {
+          <p class="message">{{ statusMessage() }}</p>
         }
 
-      </div>
-    </div>
-  `
+        @if (user()) {
+          <h2>Authorized Page</h2>
+          <p>Welcome, <strong>{{ user()?.name }}</strong>.</p>
+          <button type="button" (click)="signOut()">Sign out</button>
+        } @else {
+          <p>The One Tap prompt will appear automatically.</p>
+          <button type="button" (click)="showPrompt()">Show prompt again</button>
+          <p class="hint">If blocked by the browser, allow third-party sign-in prompts for this site.</p>
+        }
+      </section>
+    </main>
+  `,
+  styles: [
+    `
+      .container {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f7f7f7 0%, #ebf4ff 100%);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .card {
+        width: min(100%, 460px);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      h1 {
+        margin: 0 0 1rem;
+        font-size: 1.4rem;
+      }
+
+      h2 {
+        margin: 1rem 0 0.5rem;
+      }
+
+      p {
+        margin: 0.5rem 0;
+        color: #334155;
+      }
+
+      button {
+        margin-top: 0.8rem;
+        border: 0;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #fff;
+        padding: 0.6rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #1e293b;
+      }
+
+      .message {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        color: #9a3412;
+        border-radius: 10px;
+        padding: 0.6rem;
+      }
+
+      .hint {
+        font-size: 0.9rem;
+        color: #475569;
+      }
+    `,
+  ],
 })
 export class App implements OnInit {
-  // Replace this with your actual Google Client ID
-  private clientId = 'REDACTED_GOOGLE_CLIENT_ID';
-  
-  // URL to your FlightPHP backend (update this based on your cPanel setup)
-  private backendUrl = 'http://localhost:8000/api/auth';
+  private readonly clientId = 'REDACTED_GOOGLE_CLIENT_ID';
+  private readonly apiBaseUrl = 'http://localhost:8000/api';
+  private readonly http = inject(HttpClient);
+  private readonly platformId = inject(PLATFORM_ID);
 
-  private http = inject(HttpClient);
-  
-  // Signal to hold authenticated user data
-  user = signal<any>(null);
-  
-  // Signal to track if the placeholder client ID is still being used
-  clientIdError = signal<boolean>(false);
+  user = signal<AuthUser | null>(null);
+  statusMessage = signal<string>('');
 
-  // Use a sanitized ID to avoid silent failures caused by whitespace.
-  private get sanitizedClientId(): string {
-    return this.clientId.trim();
-  }
-
-  ngOnInit() {
-    // Check if the placeholder is still present before initialising the script
-    if (!this.sanitizedClientId || this.sanitizedClientId.includes('YOUR_GOOGLE_CLIENT_ID')) {
-      this.clientIdError.set(true);
+  async ngOnInit(): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    
-    this.initialiseGoogleSignIn();
+
+    await this.tryLoadExistingSession();
+
+    if (!this.user()) {
+      await this.initializeGoogleOneTap();
+      this.showPrompt();
+    }
   }
 
-  private initialiseGoogleSignIn() {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      google.accounts.id.initialize({
-        client_id: this.sanitizedClientId,
-        callback: this.handleCredentialResponse.bind(this),
-        // Enable the Federated Credential Management API (FedCM)
-        use_fedcm_for_prompt: true 
-      });
+  async signOut(): Promise<void> {
+    try {
+      await firstValueFrom(this.http.post(`${this.apiBaseUrl}/logout`, {}, { withCredentials: true }));
+    } catch {
+      // Ignore backend errors so UI can still reset local state.
+    }
 
-      // Display the One Tap prompt
-      google.accounts.id.prompt();
-    };
-    document.head.appendChild(script);
+    this.user.set(null);
+    this.statusMessage.set('Signed out.');
+
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.disableAutoSelect();
+      window.google.accounts.id.prompt();
+    }
   }
 
-  private handleCredentialResponse(response: any) {
-    // The response contains a JWT (JSON Web Token) credential from Google
-    const token = response.credential;
+  showPrompt(): void {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt();
+      return;
+    }
 
-    // Send the token to the FlightPHP backend for verification
-    this.http.post(this.backendUrl, { token }).subscribe({
-      next: (res: any) => {
-        if (res.success) {
-          this.user.set(res.user);
-        }
-      },
-      error: (err) => {
-        console.error('Authentication failed on the backend', err);
+    this.statusMessage.set('Google script is still loading. Please try again in a moment.');
+  }
+
+  private async tryLoadExistingSession(): Promise<void> {
+    try {
+      const response = await firstValueFrom(
+        this.http.get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true })
+      );
+
+      if (response.success) {
+        this.user.set(response.user);
       }
+    } catch {
+      this.user.set(null);
+    }
+  }
+
+  private async initializeGoogleOneTap(): Promise<void> {
+    if (window.google?.accounts?.id) {
+      this.configureGoogle();
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Identity Services script.'));
+      document.head.appendChild(script);
+    });
+
+    this.configureGoogle();
+  }
+
+  private configureGoogle(): void {
+    if (!window.google?.accounts?.id) {
+      this.statusMessage.set('Google One Tap is not available right now.');
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: this.clientId,
+      callback: (response: GoogleCredentialResponse) => this.handleCredentialResponse(response),
     });
   }
 
-  signOut() {
-    this.user.set(null);
-    // Revoke the Google session locally and prompt again
-    google.accounts.id.disableAutoSelect();
-    google.accounts.id.prompt();
+  private async handleCredentialResponse(response: GoogleCredentialResponse): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.http.post<AuthSuccessResponse>(
+          `${this.apiBaseUrl}/auth/google-one-tap`,
+          { token: response.credential },
+          { withCredentials: true }
+        )
+      );
+
+      if (result.success) {
+        this.user.set(result.user);
+        this.statusMessage.set('');
+      }
+    } catch {
+      this.statusMessage.set('Sign-in failed. Please try the prompt again.');
+    }
   }
 }

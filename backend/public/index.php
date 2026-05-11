@@ -7,6 +7,7 @@ const GOOGLE_CLIENT_ID = 'REDACTED_GOOGLE_CLIENT_ID';
 const ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'http://127.0.0.1:4200',
+    'http://[::1]:4200',
 ];
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';

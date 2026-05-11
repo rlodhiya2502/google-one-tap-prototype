@@ -179,7 +179,8 @@ export class App implements OnInit {
 
         if (notification.isNotDisplayed()) {
           const reason = notification.getNotDisplayedReason();
-          this.statusMessage.set(`Google One Tap was not displayed (${reason}). Add this exact origin to Google OAuth Authorized JavaScript origins.`);
+          const currentOrigin = window.location.origin;
+          this.statusMessage.set(`Google One Tap was not displayed (${reason}). Add this exact origin to Google OAuth Authorized JavaScript origins: ${currentOrigin}`);
           return;
         }
 

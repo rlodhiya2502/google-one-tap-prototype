@@ -1,7 +1,7 @@
 import { Component, OnInit, PLATFORM_ID, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpClient, HttpClientModule, HttpErrorResponse } from '@angular/common/http';
-import { catchError, firstValueFrom, of } from 'rxjs';
+import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { isPlatformBrowser } from '@angular/common';
 
 interface GoogleCredentialResponse {
@@ -17,25 +17,12 @@ interface AuthSuccessResponse {
   user: AuthUser;
 }
 
-interface PromptMomentNotification {
-  isDisplayMoment: () => boolean;
-  isDisplayed: () => boolean;
-  isNotDisplayed: () => boolean;
-  getNotDisplayedReason: () => string;
-  isSkippedMoment: () => boolean;
-  getSkippedReason: () => string;
-  isDismissedMoment: () => boolean;
-  getDismissedReason: () => string;
-  getMomentType: () => string;
-}
-
 interface GoogleAccountsApi {
   id: {
     initialize: (options: {
       client_id: string;
       callback: (response: GoogleCredentialResponse) => void;
     }) => void;
-    prompt: (callback?: (notification: PromptMomentNotification) => void) => void;
     renderButton: (element: HTMLElement, options: {
       theme?: string;
       size?: string;
@@ -76,13 +63,9 @@ declare global {
           <p>Welcome, <strong>{{ user()?.name }}</strong>.</p>
           <button type="button" (click)="signOut()">Sign out</button>
         } @else {
-          <p>The One Tap prompt will appear automatically.</p>
-          @if (showSignInButton()) {
-            <div id="google-signin-btn" class="signin-btn-wrap"></div>
-          } @else {
-            <button type="button" (click)="showPrompt()">Show prompt again</button>
-          }
-          <p class="hint">If the prompt is blocked, use the Sign in with Google button above.</p>
+          <p>Use Google Sign-In to continue.</p>
+          <div id="google-signin-btn" class="signin-btn-wrap"></div>
+          <p class="hint">This uses a popup flow and stays on this app page.</p>
         }
       </section>
     </main>
@@ -173,6 +156,7 @@ declare global {
   ],
 })
 export class App implements OnInit {
+  private readonly signInButtonId = 'google-signin-btn';
   private readonly clientId = 'REDACTED_GOOGLE_CLIENT_ID';
   private readonly apiBaseUrl = 'http://localhost:8000/api';
   private readonly http = inject(HttpClient);
@@ -180,7 +164,6 @@ export class App implements OnInit {
 
   user = signal<AuthUser | null>(null);
   statusMessage = signal<string>('');
-  showSignInButton = signal(false);
   currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
   async ngOnInit(): Promise<void> {
@@ -188,9 +171,13 @@ export class App implements OnInit {
       return;
     }
 
-    await this.waitForGoogleScript();
+    const googleReady = await this.waitForGoogleScript();
+    if (!googleReady) {
+      return;
+    }
+
     this.configureGoogle();
-    this.showPrompt();
+    this.renderSignInButton();
   }
 
   async signOut(): Promise<void> {
@@ -202,36 +189,15 @@ export class App implements OnInit {
 
     this.user.set(null);
     this.statusMessage.set('Signed out.');
-    this.showSignInButton.set(false);
 
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          this.showSignInButton.set(true);
-          setTimeout(() => this.renderSignInButton(), 0);
-        }
-      });
+      setTimeout(() => this.renderSignInButton(), 0);
     }
-  }
-
-  showPrompt(): void {
-    if (!window.google?.accounts?.id) {
-      this.statusMessage.set('Google script is still loading. Please try again in a moment.');
-      return;
-    }
-
-    this.statusMessage.set('');
-    window.google.accounts.id.prompt((notification) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        this.showSignInButton.set(true);
-        setTimeout(() => this.renderSignInButton(), 0);
-      }
-    });
   }
 
   private renderSignInButton(): void {
-    const el = document.getElementById('google-signin-btn');
+    const el = document.getElementById(this.signInButtonId);
     if (el && window.google?.accounts?.id) {
       window.google.accounts.id.renderButton(el, {
         theme: 'outline',
@@ -242,7 +208,7 @@ export class App implements OnInit {
     }
   }
 
-  private async waitForGoogleScript(): Promise<void> {
+  private async waitForGoogleScript(): Promise<boolean> {
     const maxAttempts = 50;
     let attempts = 0;
 
@@ -253,7 +219,10 @@ export class App implements OnInit {
 
     if (!window.google?.accounts?.id) {
       this.statusMessage.set('Google One Tap is not available right now.');
+      return false;
     }
+
+    return true;
   }
 
   private configureGoogle(): void {
@@ -282,7 +251,7 @@ export class App implements OnInit {
         this.statusMessage.set('');
       }
     } catch {
-      this.statusMessage.set('Sign-in failed. Please try the prompt again.');
+      this.statusMessage.set('Sign-in failed. Please try again.');
     }
   }
 }

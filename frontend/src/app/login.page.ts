@@ -3,6 +3,7 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from './auth.service';
+import { authDebug } from './auth-debug';
 
 interface TokenClientResponse {
   access_token?: string;
@@ -156,14 +157,21 @@ export class LoginPage {
       return;
     }
 
+    authDebug('login.bootstrap.start', { origin: this.currentOrigin });
     void this.bootstrap();
   }
 
   startGoogleSignIn(): void {
     if (!this.tokenClient || this.isBusy() || this.popupInProgress) {
+      authDebug('login.click.ignored', {
+        hasTokenClient: !!this.tokenClient,
+        isBusy: this.isBusy(),
+        popupInProgress: this.popupInProgress,
+      });
       return;
     }
 
+    authDebug('login.popup.requested');
     this.popupInProgress = true;
     this.isBusy.set(true);
     this.statusMessage.set('');
@@ -173,9 +181,12 @@ export class LoginPage {
   private async bootstrap(): Promise<void> {
     const ready = await this.waitForGoogleScript();
     if (!ready) {
+      authDebug('login.script.unavailable');
       this.statusMessage.set('Google Sign-In script is not available right now.');
       return;
     }
+
+    authDebug('login.script.ready');
 
     this.tokenClient = window.google?.accounts?.oauth2?.initTokenClient({
       client_id: this.clientId,
@@ -185,26 +196,39 @@ export class LoginPage {
     }) || null;
 
     if (!this.tokenClient) {
+      authDebug('login.tokenClient.init.failed');
       this.statusMessage.set('Unable to initialize Google Sign-In.');
       return;
     }
 
+    authDebug('login.tokenClient.init.success');
     this.isReady.set(true);
   }
 
   private async handleTokenResponse(response: TokenClientResponse): Promise<void> {
     if (response.error || !response.access_token) {
+      authDebug('login.token.response.error', {
+        hasAccessToken: !!response.access_token,
+        error: response.error || 'missing_access_token',
+      });
       this.statusMessage.set('Google sign-in was cancelled or blocked.');
       this.popupInProgress = false;
       this.isBusy.set(false);
       return;
     }
 
+    authDebug('login.token.response.success');
+
     try {
       await this.authService.signInWithGoogleAccessToken(response.access_token);
+      authDebug('login.backend.signin.success');
       this.statusMessage.set('');
       await this.router.navigateByUrl('/authorized');
     } catch (error) {
+      authDebug('login.backend.signin.failed', {
+        errorType: error instanceof HttpErrorResponse ? 'http' : 'unknown',
+        status: error instanceof HttpErrorResponse ? error.status : undefined,
+      });
       if (error instanceof HttpErrorResponse && error.status === 401) {
         this.statusMessage.set('Google token was rejected by backend verification.');
       } else {
@@ -217,6 +241,7 @@ export class LoginPage {
   }
 
   private handleTokenError(error: TokenClientErrorResponse): void {
+    authDebug('login.popup.error', { type: error.type });
     if (error.type === 'popup_failed_to_open' || error.type === 'popup_closed') {
       this.statusMessage.set('Popup was blocked or closed. Please click Continue with Google again.');
     } else {

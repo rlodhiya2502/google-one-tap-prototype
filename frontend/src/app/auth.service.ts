@@ -2,30 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { authDebug } from './auth-debug';
-
-export interface AuthUser {
-  name: string;
-  email: string;
-  role: 'admin' | 'instructor' | 'learner';
-}
-
-interface AuthSuccessResponse {
-  success: boolean;
-  user: AuthUser;
-  sessionToken?: string;
-  expiresAt?: number;
-}
-
-export interface DashboardData {
-  widgets: string[];
-  permissions: string[];
-}
-
-interface DashboardResponse {
-  success: boolean;
-  user: AuthUser;
-  dashboard: DashboardData;
-}
+import { AuthUser, AuthSuccessResponse, DashboardData, DashboardResponse } from './auth.types';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -51,7 +28,7 @@ export class AuthService {
     authDebug('session.load.start');
     try {
       const response = await firstValueFrom(
-        this.http.get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true })
+        this.http.get<AuthSuccessResponse>(`${this.apiBaseUrl}/me`, { withCredentials: true }),
       );
 
       if (response.success) {
@@ -87,8 +64,8 @@ export class AuthService {
       this.http.post<AuthSuccessResponse>(
         `${this.apiBaseUrl}/auth/google-access-token`,
         { accessToken },
-        { withCredentials: true }
-      )
+        { withCredentials: true },
+      ),
     );
 
     if (response.success) {
@@ -107,7 +84,9 @@ export class AuthService {
   async signOut(): Promise<void> {
     authDebug('signout.start');
     try {
-      await firstValueFrom(this.http.post(`${this.apiBaseUrl}/logout`, {}, { withCredentials: true }));
+      await firstValueFrom(
+        this.http.post(`${this.apiBaseUrl}/logout`, {}, { withCredentials: true }),
+      );
     } finally {
       this.user.set(null);
       this.setSessionToken(null);
@@ -134,7 +113,7 @@ export class AuthService {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      })
+      }),
     );
 
     if (!response.success) {

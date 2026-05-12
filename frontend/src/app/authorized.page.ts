@@ -2,7 +2,8 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { AuthService, DashboardData } from './auth.service';
+import { AuthService } from './auth.service';
+import { DashboardData } from './auth.types';
 
 @Component({
   standalone: true,
@@ -21,9 +22,16 @@ import { AuthService, DashboardData } from './auth.service';
           <p class="hint">Loading dashboard data...</p>
         }
 
-        <p>Welcome, <strong>{{ authService.user()?.name }}</strong>.</p>
-        <p>Email: <strong>{{ authService.user()?.email }}</strong></p>
-        <p>Role: <strong class="role-badge">{{ authService.user()?.role }}</strong></p>
+        <p>
+          Welcome, <strong>{{ authService.user()?.name }}</strong
+          >.
+        </p>
+        <p>
+          Email: <strong>{{ authService.user()?.email }}</strong>
+        </p>
+        <p>
+          Role: <strong class="role-badge">{{ authService.user()?.role }}</strong>
+        </p>
 
         @if (dashboard()) {
           <div class="section">
@@ -57,7 +65,7 @@ import { AuthService, DashboardData } from './auth.service';
         place-items: center;
         padding: 1rem;
         background: linear-gradient(135deg, #f7f7f7 0%, #ebf4ff 100%);
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       }
 
       .card {
@@ -185,7 +193,9 @@ export class AuthorizedPage {
     } catch (error) {
       this.dashboard.set(null);
       if (error instanceof HttpErrorResponse && error.status === 403) {
-        this.statusMessage.set('You are authenticated but not authorized for this dashboard scope.');
+        this.statusMessage.set(
+          'You are authenticated but not authorized for this dashboard scope.',
+        );
       } else {
         this.statusMessage.set('Failed to load dashboard data.');
       }

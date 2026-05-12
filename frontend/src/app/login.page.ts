@@ -37,40 +37,6 @@ export class LoginPage {
     void this.bootstrap();
   }
 
-  startGoogleSignIn(event: MouseEvent): void {
-    if (!event.isTrusted) {
-      authDebug('login.click.untrusted');
-      return;
-    }
-
-    if (typeof navigator !== 'undefined' && 'userActivation' in navigator) {
-      const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } })
-        .userActivation;
-      if (activation && !activation.isActive) {
-        authDebug('login.click.noUserActivation');
-        this.statusMessage.set(
-          'User activation is required. Please click Continue with Google again.',
-        );
-        return;
-      }
-    }
-
-    if (!this.tokenClient || this.isBusy() || this.popupInProgress) {
-      authDebug('login.click.ignored', {
-        hasTokenClient: !!this.tokenClient,
-        isBusy: this.isBusy(),
-        popupInProgress: this.popupInProgress,
-      });
-      return;
-    }
-
-    authDebug('login.popup.requested');
-    this.popupInProgress = true;
-    this.isBusy.set(true);
-    this.statusMessage.set('');
-    this.tokenClient.requestAccessToken({ prompt: 'select_account' });
-  }
-
   private async bootstrap(): Promise<void> {
     const ready = await this.waitForGoogleScript();
     if (!ready) {
@@ -158,5 +124,39 @@ export class LoginPage {
     }
 
     return !!window.google?.accounts?.oauth2;
+  }
+
+  startGoogleSignIn(event: MouseEvent): void {
+    if (!event.isTrusted) {
+      authDebug('login.click.untrusted');
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && 'userActivation' in navigator) {
+      const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } })
+        .userActivation;
+      if (activation && !activation.isActive) {
+        authDebug('login.click.noUserActivation');
+        this.statusMessage.set(
+          'User activation is required. Please click Continue with Google again.',
+        );
+        return;
+      }
+    }
+
+    if (!this.tokenClient || this.isBusy() || this.popupInProgress) {
+      authDebug('login.click.ignored', {
+        hasTokenClient: !!this.tokenClient,
+        isBusy: this.isBusy(),
+        popupInProgress: this.popupInProgress,
+      });
+      return;
+    }
+
+    authDebug('login.popup.requested');
+    this.popupInProgress = true;
+    this.isBusy.set(true);
+    this.statusMessage.set('');
+    this.tokenClient.requestAccessToken({ prompt: 'select_account' });
   }
 }

@@ -5,38 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from './auth.service';
 import { authDebug } from './auth-debug';
 import { environment } from '../environments/environment';
-
-interface TokenClientResponse {
-  access_token?: string;
-  error?: string;
-}
-
-interface TokenClient {
-  requestAccessToken: (options?: { prompt?: string }) => void;
-}
-
-interface TokenClientErrorResponse {
-  type: string;
-}
-
-interface GoogleOauth2Api {
-  initTokenClient: (options: {
-    client_id: string;
-    scope: string;
-    callback: (response: TokenClientResponse) => void;
-    error_callback?: (error: TokenClientErrorResponse) => void;
-  }) => TokenClient;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts?: {
-        oauth2?: GoogleOauth2Api;
-      };
-    };
-  }
-}
+import { TokenClientResponse, TokenClient, TokenClientErrorResponse } from './login.types';
 
 @Component({
   standalone: true,
@@ -49,14 +18,20 @@ declare global {
         <p>Use the button below to sign in without leaving this app.</p>
 
         <div class="origin-debug">
-          <small>Current Origin: <code>{{ currentOrigin }}</code></small>
+          <small
+            >Current Origin: <code>{{ currentOrigin }}</code></small
+          >
         </div>
 
         @if (statusMessage()) {
           <p class="message">{{ statusMessage() }}</p>
         }
 
-        <button type="button" (click)="startGoogleSignIn($event)" [disabled]="isBusy() || !isReady()">
+        <button
+          type="button"
+          (click)="startGoogleSignIn($event)"
+          [disabled]="isBusy() || !isReady()"
+        >
           Continue with Google
         </button>
       </section>
@@ -70,7 +45,7 @@ declare global {
         place-items: center;
         padding: 1rem;
         background: linear-gradient(135deg, #f7f7f7 0%, #ebf4ff 100%);
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       }
 
       .card {
@@ -133,7 +108,7 @@ declare global {
         background: #e2e8f0;
         padding: 0.2rem 0.4rem;
         border-radius: 3px;
-        font-family: "Courier New", monospace;
+        font-family: 'Courier New', monospace;
         word-break: break-all;
       }
     `,
@@ -169,10 +144,13 @@ export class LoginPage {
     }
 
     if (typeof navigator !== 'undefined' && 'userActivation' in navigator) {
-      const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+      const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } })
+        .userActivation;
       if (activation && !activation.isActive) {
         authDebug('login.click.noUserActivation');
-        this.statusMessage.set('User activation is required. Please click Continue with Google again.');
+        this.statusMessage.set(
+          'User activation is required. Please click Continue with Google again.',
+        );
         return;
       }
     }
@@ -203,12 +181,13 @@ export class LoginPage {
 
     authDebug('login.script.ready');
 
-    this.tokenClient = window.google?.accounts?.oauth2?.initTokenClient({
-      client_id: this.clientId,
-      scope: 'openid profile email',
-      callback: (response: TokenClientResponse) => void this.handleTokenResponse(response),
-      error_callback: (error: TokenClientErrorResponse) => this.handleTokenError(error),
-    }) || null;
+    this.tokenClient =
+      window.google?.accounts?.oauth2?.initTokenClient({
+        client_id: this.clientId,
+        scope: 'openid profile email',
+        callback: (response: TokenClientResponse) => void this.handleTokenResponse(response),
+        error_callback: (error: TokenClientErrorResponse) => this.handleTokenError(error),
+      }) || null;
 
     if (!this.tokenClient) {
       authDebug('login.tokenClient.init.failed');
@@ -258,7 +237,9 @@ export class LoginPage {
   private handleTokenError(error: TokenClientErrorResponse): void {
     authDebug('login.popup.error', { type: error.type });
     if (error.type === 'popup_failed_to_open' || error.type === 'popup_closed') {
-      this.statusMessage.set('Popup was blocked or closed. Please click Continue with Google again.');
+      this.statusMessage.set(
+        'Popup was blocked or closed. Please click Continue with Google again.',
+      );
     } else {
       this.statusMessage.set('Google sign-in could not be started.');
     }
@@ -272,7 +253,7 @@ export class LoginPage {
     let attempts = 0;
 
     while (!window.google?.accounts?.oauth2 && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       attempts++;
     }
 

@@ -11,32 +11,7 @@ import { TokenClientResponse, TokenClient, TokenClientErrorResponse } from './lo
   standalone: true,
   selector: 'app-login-page',
   imports: [CommonModule],
-  template: `
-    <main class="container">
-      <section class="card">
-        <h1>Sign in with Google</h1>
-        <p>Use the button below to sign in without leaving this app.</p>
-
-        <div class="origin-debug">
-          <small
-            >Current Origin: <code>{{ currentOrigin }}</code></small
-          >
-        </div>
-
-        @if (statusMessage()) {
-          <p class="message">{{ statusMessage() }}</p>
-        }
-
-        <button
-          type="button"
-          (click)="startGoogleSignIn($event)"
-          [disabled]="isBusy() || !isReady()"
-        >
-          Continue with Google
-        </button>
-      </section>
-    </main>
-  `,
+  templateUrl: './login.page.html',
   styles: [
     `
       .container {
